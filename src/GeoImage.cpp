@@ -1,6 +1,7 @@
 #include "GeoImage/GeoImage.hpp"
 #include <tiffio.h>
 #include <algorithm>
+#include <cmath>
 
 namespace geoimage {
 
@@ -25,10 +26,13 @@ GeoImage::GeoImage(GeoImage&& other) noexcept
     , m_samplesPerPixel(other.m_samplesPerPixel)
     , m_bitsPerSample(other.m_bitsPerSample)
     , m_data(std::move(other.m_data))
+    , m_transformation(other.m_transformation)
+    , m_hasTransformation(other.m_hasTransformation)
 {
     other.m_tiff = nullptr;
     other.m_width = 0;
     other.m_height = 0;
+    other.m_hasTransformation = false;
 }
 
 GeoImage& GeoImage::operator=(GeoImage&& other) noexcept {
@@ -40,10 +44,13 @@ GeoImage& GeoImage::operator=(GeoImage&& other) noexcept {
         m_samplesPerPixel = other.m_samplesPerPixel;
         m_bitsPerSample = other.m_bitsPerSample;
         m_data = std::move(other.m_data);
+        m_transformation = other.m_transformation;
+        m_hasTransformation = other.m_hasTransformation;
 
         other.m_tiff = nullptr;
         other.m_width = 0;
         other.m_height = 0;
+        other.m_hasTransformation = false;
     }
     return *this;
 }
@@ -62,6 +69,37 @@ bool GeoImage::open(const std::string& filename) {
     TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &m_height);
     TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &m_samplesPerPixel);
     TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &m_bitsPerSample);
+
+    // Read GeoTIFF transformation
+    m_hasTransformation = false;
+    double* transformData = nullptr;
+    uint16_t transformCount = 0;
+    
+    // Try to read ModelTransformationTag (34264)
+    if (TIFFGetField(tiff, 34264, &transformCount, &transformData) && transformCount >= 16) {
+        for (int i = 0; i < 16; ++i) {
+            m_transformation[i] = transformData[i];
+        }
+        m_hasTransformation = true;
+    } else {
+        // Try to construct from ModelTiepointTag (33922) and ModelPixelScaleTag (33550)
+        double* tiePoints = nullptr;
+        double* pixelScale = nullptr;
+        uint16_t tieCount = 0, scaleCount = 0;
+        
+        if (TIFFGetField(tiff, 33922, &tieCount, &tiePoints) && tieCount >= 6 &&
+            TIFFGetField(tiff, 33550, &scaleCount, &pixelScale) && scaleCount >= 2) {
+            // Construct transformation from tie point and scale
+            // TiePoint: [I, J, K, X, Y, Z]
+            // PixelScale: [ScaleX, ScaleY, ScaleZ]
+            double tpI = tiePoints[0], tpJ = tiePoints[1];
+            double tpX = tiePoints[3], tpY = tiePoints[4];
+            double scaleX = pixelScale[0];
+            double scaleY = pixelScale[1];
+            
+            setTransformationFromTiePointScale(tpI, tpJ, tpX, tpY, scaleX, scaleY);
+        }
+    }
 
     // Read image data as 32-bit float
     m_data.resize(m_width * m_height * m_samplesPerPixel);
@@ -124,6 +162,11 @@ bool GeoImage::save(const std::string& filename, SampleFormat format) {
     TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, m_samplesPerPixel >= 3 ? PHOTOMETRIC_RGB : PHOTOMETRIC_MINISBLACK);
 
+    // Write GeoTIFF ModelTransformationTag (34264) if we have transformation data
+    if (m_hasTransformation) {
+        TIFFSetField(tiff, 34264, 16, m_transformation.data());
+    }
+
     size_t samplesPerRow = m_width * m_samplesPerPixel;
     
     for (uint32_t row = 0; row < m_height; ++row) {
@@ -182,6 +225,64 @@ void GeoImage::clear() {
     m_samplesPerPixel = 1;
     m_bitsPerSample = 32;
     m_data.clear();
+    m_transformation = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    m_hasTransformation = false;
+}
+
+void GeoImage::setTransformation(const ModelTransformation& transform) {
+    m_transformation = transform;
+    m_hasTransformation = true;
+}
+
+void GeoImage::setTransformationFromTiePointScale(double tiePointX, double tiePointY,
+                                                   double geoX, double geoY,
+                                                   double scaleX, double scaleY) {
+    // Build 4x4 transformation matrix from tie point and pixel scale
+    // X = geoX + (pixelX - tiePointX) * scaleX
+    // Y = geoY - (pixelY - tiePointY) * scaleY  (Y typically inverted)
+    //
+    // Matrix form (row-major):
+    // | scaleX    0      0    geoX - tiePointX * scaleX  |
+    // |   0    -scaleY   0    geoY + tiePointY * scaleY  |
+    // |   0       0      0              0                |
+    // |   0       0      0              1                |
+    
+    m_transformation = {
+        scaleX,   0.0,      0.0,  geoX - tiePointX * scaleX,
+        0.0,     -scaleY,   0.0,  geoY + tiePointY * scaleY,
+        0.0,      0.0,      0.0,  0.0,
+        0.0,      0.0,      0.0,  1.0
+    };
+    m_hasTransformation = true;
+}
+
+void GeoImage::pixelToGeo(double pixelX, double pixelY, double& geoX, double& geoY) const {
+    // Apply transformation matrix: [x, y, z, 1] = M * [i, j, k, 1]
+    // For 2D: x = m[0]*i + m[1]*j + m[3]
+    //         y = m[4]*i + m[5]*j + m[7]
+    geoX = m_transformation[0] * pixelX + m_transformation[1] * pixelY + m_transformation[3];
+    geoY = m_transformation[4] * pixelX + m_transformation[5] * pixelY + m_transformation[7];
+}
+
+void GeoImage::geoToPixel(double geoX, double geoY, double& pixelX, double& pixelY) const {
+    // Inverse of 2D affine transformation
+    // For simple scale+translate: pixelX = (geoX - tx) / scaleX
+    //                             pixelY = (geoY - ty) / scaleY
+    double a = m_transformation[0];  // scaleX
+    double b = m_transformation[1];
+    double e = m_transformation[4];
+    double f = m_transformation[5];  // -scaleY
+    double tx = m_transformation[3];
+    double ty = m_transformation[7];
+    
+    double det = a * f - b * e;
+    if (std::abs(det) > 1e-10) {
+        pixelX = (f * (geoX - tx) - b * (geoY - ty)) / det;
+        pixelY = (-e * (geoX - tx) + a * (geoY - ty)) / det;
+    } else {
+        pixelX = 0.0;
+        pixelY = 0.0;
+    }
 }
 
 } // namespace geoimage
