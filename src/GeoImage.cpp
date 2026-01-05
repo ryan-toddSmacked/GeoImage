@@ -1,4 +1,5 @@
 #include "GeoImage/GeoImage.hpp"
+#include "Geographic/GeoHelpers.hpp"
 #include <tiffio.h>
 #include <algorithm>
 #include <cmath>
@@ -76,7 +77,7 @@ bool GeoImage::open(const std::string& filename) {
     uint16_t transformCount = 0;
     
     // Try to read ModelTransformationTag (34264)
-    if (TIFFGetField(tiff, 34264, &transformCount, &transformData) && transformCount >= 16) {
+    if (TIFFGetField(tiff, geohelpers::TIFFTAG_MODELTRANSFORMATION, &transformCount, &transformData) && transformCount >= 16) {
         for (int i = 0; i < 16; ++i) {
             m_transformation[i] = transformData[i];
         }
@@ -87,8 +88,8 @@ bool GeoImage::open(const std::string& filename) {
         double* pixelScale = nullptr;
         uint16_t tieCount = 0, scaleCount = 0;
         
-        if (TIFFGetField(tiff, 33922, &tieCount, &tiePoints) && tieCount >= 6 &&
-            TIFFGetField(tiff, 33550, &scaleCount, &pixelScale) && scaleCount >= 2) {
+        if (TIFFGetField(tiff, geohelpers::TIFFTAG_MODELTIEPOINT, &tieCount, &tiePoints) && tieCount >= 6 &&
+            TIFFGetField(tiff, geohelpers::TIFFTAG_MODELPIXELSCALE, &scaleCount, &pixelScale) && scaleCount >= 2) {
             // Construct transformation from tie point and scale
             // TiePoint: [I, J, K, X, Y, Z]
             // PixelScale: [ScaleX, ScaleY, ScaleZ]
@@ -162,9 +163,20 @@ bool GeoImage::save(const std::string& filename, SampleFormat format) {
     TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, m_samplesPerPixel >= 3 ? PHOTOMETRIC_RGB : PHOTOMETRIC_MINISBLACK);
 
-    // Write GeoTIFF ModelTransformationTag (34264) if we have transformation data
+    // Write GeoTIFF tags if we have transformation data
     if (m_hasTransformation) {
-        TIFFSetField(tiff, 34264, 16, m_transformation.data());
+        // ModelTransformationTag (34264)
+        TIFFSetField(tiff, geohelpers::TIFFTAG_MODELTRANSFORMATION, 16, m_transformation.data());
+        
+        // GeoKeyDirectoryTag (34735) for EPSG:4326
+        TIFFSetField(tiff, geohelpers::TIFFTAG_GEOKEYDIRECTORY, 
+                     geohelpers::EPSG_4326_GeoKeyDirectory.size(), 
+                     geohelpers::EPSG_4326_GeoKeyDirectory.data());
+        
+        // GeoDoubleParamsTag (34736) - WGS84 ellipsoid parameters
+        TIFFSetField(tiff, geohelpers::TIFFTAG_GEODOUBLEPARAMS, 
+                     geohelpers::EPSG_4326_GeoDoubleParams.size(), 
+                     geohelpers::EPSG_4326_GeoDoubleParams.data());
     }
 
     size_t samplesPerRow = m_width * m_samplesPerPixel;
