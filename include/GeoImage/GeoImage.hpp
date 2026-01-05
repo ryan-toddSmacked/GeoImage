@@ -28,6 +28,7 @@ public:
     bool open(const std::string& filename);
     bool save(const std::string& filename, SampleFormat format = SampleFormat::UInt8);
     void close();
+    void clear();
 
     // Image properties
     uint32_t width() const { return m_width; }

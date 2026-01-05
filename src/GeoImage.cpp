@@ -173,8 +173,14 @@ void GeoImage::close() {
         TIFFClose(static_cast<TIFF*>(m_tiff));
         m_tiff = nullptr;
     }
+}
+
+void GeoImage::clear() {
+    close();
     m_width = 0;
     m_height = 0;
+    m_samplesPerPixel = 1;
+    m_bitsPerSample = 32;
     m_data.clear();
 }
 
