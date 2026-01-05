@@ -1,6 +1,5 @@
 #include "GeoImage/GeoImage.hpp"
 #include "Geographic/GeoHelpers.hpp"
-#include "BLAS/blas.hpp"
 #include <iostream>
 #include <iomanip>
 #include <cmath>
@@ -80,21 +79,18 @@ int main() {
                   << gx[i] << ", " << gy[i] << ")\n";
     }
     
-    // Compute affine transformation using least squares (4 points)
-    blas::Vector<6> coeffs;
-    if (!blas::affineFrom4Points(px, py, gx, gy, coeffs)) {
+    // Create the GeoImage
+    geoimage::GeoImage img;
+    img.setDimensions(imageSize, imageSize, 3);  // RGB
+    
+    // Compute and set transformation using the new member function
+    if (!img.setTransformationFromPoints(px, py, gx, gy)) {
         std::cout << "\nFAILED to compute affine transformation!\n";
         return 1;
     }
     
-    std::cout << "\nAffine coefficients:\n";
-    std::cout << "  geoX = " << coeffs[0] << "*px + " << coeffs[1] << "*py + " << coeffs[2] << "\n";
-    std::cout << "  geoY = " << coeffs[3] << "*px + " << coeffs[4] << "*py + " << coeffs[5] << "\n";
-    
-    // Convert to 4x4 matrix
-    auto matrix = blas::affineCoeffsToMatrix4x4(coeffs);
-    
     std::cout << "\n4x4 Transformation Matrix:\n";
+    const auto& matrix = img.transformation();
     for (int i = 0; i < 4; ++i) {
         std::cout << "  [";
         for (int j = 0; j < 4; ++j) {
@@ -103,17 +99,6 @@ int main() {
         }
         std::cout << "]\n";
     }
-    
-    // Create the GeoImage
-    geoimage::GeoImage img;
-    img.setDimensions(imageSize, imageSize, 3);  // RGB
-    
-    // Set the transformation matrix
-    geoimage::ModelTransformation transform;
-    for (int i = 0; i < 16; ++i) {
-        transform[i] = matrix[i];
-    }
-    img.setTransformation(transform);
     
     // Generate a pattern - concentric circles from center
     auto& data = img.data();

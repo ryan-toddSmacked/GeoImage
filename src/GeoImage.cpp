@@ -1,5 +1,6 @@
 #include "GeoImage/GeoImage.hpp"
 #include "Geographic/GeoHelpers.hpp"
+#include "BLAS/blas.hpp"
 #include <tiffio.h>
 #include <algorithm>
 #include <cmath>
@@ -356,6 +357,48 @@ void GeoImage::getResolutionMetersPerPixel(double& metersPerPixelX, double& mete
     
     metersPerPixelX = degPerPixelX * metersPerDegreeLon;
     metersPerPixelY = degPerPixelY * metersPerDegreeLat;
+}
+
+bool GeoImage::setTransformationFromPoints(const std::array<double, 3>& pixelX, const std::array<double, 3>& pixelY,
+                                           const std::array<double, 3>& geoX, const std::array<double, 3>& geoY) {
+    blas::Vector<6> coeffs;
+    if (!blas::affineFrom3Points(pixelX, pixelY, geoX, geoY, coeffs)) {
+        return false;
+    }
+    auto matrix = blas::affineCoeffsToMatrix4x4(coeffs);
+    for (int i = 0; i < 16; ++i) {
+        m_transformation[i] = matrix[i];
+    }
+    m_hasTransformation = true;
+    return true;
+}
+
+bool GeoImage::setTransformationFromPoints(const std::array<double, 4>& pixelX, const std::array<double, 4>& pixelY,
+                                           const std::array<double, 4>& geoX, const std::array<double, 4>& geoY) {
+    blas::Vector<6> coeffs;
+    if (!blas::affineFrom4Points(pixelX, pixelY, geoX, geoY, coeffs)) {
+        return false;
+    }
+    auto matrix = blas::affineCoeffsToMatrix4x4(coeffs);
+    for (int i = 0; i < 16; ++i) {
+        m_transformation[i] = matrix[i];
+    }
+    m_hasTransformation = true;
+    return true;
+}
+
+bool GeoImage::setTransformationFromPoints(const std::array<double, 5>& pixelX, const std::array<double, 5>& pixelY,
+                                           const std::array<double, 5>& geoX, const std::array<double, 5>& geoY) {
+    blas::Vector<6> coeffs;
+    if (!blas::affineFrom5Points(pixelX, pixelY, geoX, geoY, coeffs)) {
+        return false;
+    }
+    auto matrix = blas::affineCoeffsToMatrix4x4(coeffs);
+    for (int i = 0; i < 16; ++i) {
+        m_transformation[i] = matrix[i];
+    }
+    m_hasTransformation = true;
+    return true;
 }
 
 } // namespace geoimage

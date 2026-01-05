@@ -69,6 +69,17 @@ public:
     // Get resolution in meters per pixel (requires transformation)
     // Returns approximate resolution at image center
     void getResolutionMetersPerPixel(double& metersPerPixelX, double& metersPerPixelY) const;
+    
+    // Compute transformation from point correspondences (3-5 points)
+    // pixelX, pixelY: pixel coordinates
+    // geoX, geoY: geographic coordinates (longitude, latitude)
+    // Returns true if transformation was computed successfully
+    bool setTransformationFromPoints(const std::array<double, 3>& pixelX, const std::array<double, 3>& pixelY,
+                                     const std::array<double, 3>& geoX, const std::array<double, 3>& geoY);
+    bool setTransformationFromPoints(const std::array<double, 4>& pixelX, const std::array<double, 4>& pixelY,
+                                     const std::array<double, 4>& geoX, const std::array<double, 4>& geoY);
+    bool setTransformationFromPoints(const std::array<double, 5>& pixelX, const std::array<double, 5>& pixelY,
+                                     const std::array<double, 5>& geoX, const std::array<double, 5>& geoY);
 
     bool isOpen() const { return m_tiff != nullptr; }
 
