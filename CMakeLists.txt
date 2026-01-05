@@ -45,8 +45,19 @@ target_link_libraries(GeoImage
 
 # Optional: Build example/test executable
 option(GEOIMAGE_BUILD_EXAMPLES "Build example executables" ON)
+option(GEOIMAGE_BUILD_TESTS "Build test executables" ON)
 
 if(GEOIMAGE_BUILD_EXAMPLES)
     add_executable(geoimage_example examples/main.cpp)
     target_link_libraries(geoimage_example PRIVATE GeoImage)
+endif()
+
+if(GEOIMAGE_BUILD_TESTS)
+    add_executable(geoimage_tests tests/test_geoimage.cpp)
+    target_link_libraries(geoimage_tests PRIVATE GeoImage)
+    
+    # Set working directory for tests
+    set_target_properties(geoimage_tests PROPERTIES
+        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
 endif()
