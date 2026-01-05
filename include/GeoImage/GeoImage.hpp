@@ -65,6 +65,10 @@ public:
     // Convert pixel coordinates to geo coordinates using transformation
     void pixelToGeo(double pixelX, double pixelY, double& geoX, double& geoY) const;
     void geoToPixel(double geoX, double geoY, double& pixelX, double& pixelY) const;
+    
+    // Get resolution in meters per pixel (requires transformation)
+    // Returns approximate resolution at image center
+    void getResolutionMetersPerPixel(double& metersPerPixelX, double& metersPerPixelY) const;
 
     bool isOpen() const { return m_tiff != nullptr; }
 

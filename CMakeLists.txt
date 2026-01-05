@@ -50,6 +50,9 @@ option(GEOIMAGE_BUILD_TESTS "Build test executables" ON)
 if(GEOIMAGE_BUILD_EXAMPLES)
     add_executable(geoimage_example examples/main.cpp)
     target_link_libraries(geoimage_example PRIVATE GeoImage)
+    
+    add_executable(test_newyork examples/test_newyork.cpp)
+    target_link_libraries(test_newyork PRIVATE GeoImage)
 endif()
 
 if(GEOIMAGE_BUILD_TESTS)

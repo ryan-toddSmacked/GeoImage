@@ -6,6 +6,20 @@
 
 namespace geoimage {
 
+// GeoTIFF tag definitions for libtiff
+static const TIFFFieldInfo geotiffFieldInfo[] = {
+    { 33550, -1, -1, TIFF_DOUBLE, FIELD_CUSTOM, true, true, const_cast<char*>("ModelPixelScaleTag") },
+    { 33922, -1, -1, TIFF_DOUBLE, FIELD_CUSTOM, true, true, const_cast<char*>("ModelTiepointTag") },
+    { 34264, -1, -1, TIFF_DOUBLE, FIELD_CUSTOM, true, true, const_cast<char*>("ModelTransformationTag") },
+    { 34735, -1, -1, TIFF_SHORT, FIELD_CUSTOM, true, true, const_cast<char*>("GeoKeyDirectoryTag") },
+    { 34736, -1, -1, TIFF_DOUBLE, FIELD_CUSTOM, true, true, const_cast<char*>("GeoDoubleParamsTag") },
+    { 34737, -1, -1, TIFF_ASCII, FIELD_CUSTOM, true, false, const_cast<char*>("GeoAsciiParamsTag") },
+};
+
+static void registerGeoTIFFTags(TIFF* tiff) {
+    TIFFMergeFieldInfo(tiff, geotiffFieldInfo, sizeof(geotiffFieldInfo) / sizeof(geotiffFieldInfo[0]));
+}
+
 GeoImage::~GeoImage() {
     close();
 }
@@ -63,6 +77,9 @@ bool GeoImage::open(const std::string& filename) {
     if (!tiff) {
         return false;
     }
+
+    // Register GeoTIFF tags
+    registerGeoTIFFTags(tiff);
 
     m_tiff = tiff;
 
@@ -132,6 +149,9 @@ bool GeoImage::save(const std::string& filename, SampleFormat format) {
         return false;
     }
 
+    // Register GeoTIFF tags
+    registerGeoTIFFTags(tiff);
+
     uint16_t bitsPerSample = 8;
     uint16_t sampleFormat = SAMPLEFORMAT_UINT;
     
@@ -177,6 +197,19 @@ bool GeoImage::save(const std::string& filename, SampleFormat format) {
         TIFFSetField(tiff, geohelpers::TIFFTAG_GEODOUBLEPARAMS, 
                      geohelpers::EPSG_4326_GeoDoubleParams.size(), 
                      geohelpers::EPSG_4326_GeoDoubleParams.data());
+        
+        // Calculate and set XResolution/YResolution in pixels per centimeter
+        double metersPerPixelX, metersPerPixelY;
+        getResolutionMetersPerPixel(metersPerPixelX, metersPerPixelY);
+        if (metersPerPixelX > 0 && metersPerPixelY > 0) {
+            // Convert meters per pixel to pixels per centimeter
+            // pixels/cm = 0.01 / meters_per_pixel
+            float xRes = static_cast<float>(0.01 / metersPerPixelX);
+            float yRes = static_cast<float>(0.01 / metersPerPixelY);
+            TIFFSetField(tiff, TIFFTAG_XRESOLUTION, xRes);
+            TIFFSetField(tiff, TIFFTAG_YRESOLUTION, yRes);
+            TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_CENTIMETER);
+        }
     }
 
     size_t samplesPerRow = m_width * m_samplesPerPixel;
@@ -295,6 +328,34 @@ void GeoImage::geoToPixel(double geoX, double geoY, double& pixelX, double& pixe
         pixelX = 0.0;
         pixelY = 0.0;
     }
+}
+
+void GeoImage::getResolutionMetersPerPixel(double& metersPerPixelX, double& metersPerPixelY) const {
+    if (!m_hasTransformation) {
+        metersPerPixelX = 0.0;
+        metersPerPixelY = 0.0;
+        return;
+    }
+    
+    // Get the center of the image in geo coordinates
+    double centerPixelX = m_width / 2.0;
+    double centerPixelY = m_height / 2.0;
+    double centerGeoX, centerGeoY;
+    pixelToGeo(centerPixelX, centerPixelY, centerGeoX, centerGeoY);
+    
+    // Get pixel scale from transformation matrix (degrees per pixel)
+    double degPerPixelX = std::abs(m_transformation[0]);  // scaleX
+    double degPerPixelY = std::abs(m_transformation[5]);  // scaleY (may be negative)
+    
+    // Convert degrees to meters at the center latitude
+    // 1 degree of latitude ≈ 111,320 meters (constant)
+    // 1 degree of longitude ≈ 111,320 * cos(latitude) meters
+    double latRad = geohelpers::degreesToRadians(centerGeoY);
+    double metersPerDegreeLat = geohelpers::EARTH_CIRCUMFERENCE_METERS / 360.0;
+    double metersPerDegreeLon = metersPerDegreeLat * std::cos(latRad);
+    
+    metersPerPixelX = degPerPixelX * metersPerDegreeLon;
+    metersPerPixelY = degPerPixelY * metersPerDegreeLat;
 }
 
 } // namespace geoimage
