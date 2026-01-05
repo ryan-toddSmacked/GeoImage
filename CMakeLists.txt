@@ -53,6 +53,9 @@ if(GEOIMAGE_BUILD_EXAMPLES)
     
     add_executable(test_newyork examples/test_newyork.cpp)
     target_link_libraries(test_newyork PRIVATE GeoImage)
+    
+    add_executable(test_rotated examples/test_rotated.cpp)
+    target_link_libraries(test_rotated PRIVATE GeoImage)
 endif()
 
 if(GEOIMAGE_BUILD_TESTS)
